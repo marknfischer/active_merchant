@@ -38,47 +38,47 @@ module ActiveMerchant #:nodoc:
         requires!(options, :order_id)
 
         request = build_non_authorized_request('Sale', money, credit_card, options)
-        commit('Sale', request)
+        commit('Sale', request, options)
       end
 
       def credit(money, credit_card, options = {})
         requires!(options, :order_id)
 
         request = build_non_authorized_request('Return', money, credit_card, options)
-        commit('Return', request)
+        commit('Return', request, options)
       end
 
       def authorize(money, credit_card, options = {})
         requires!(options, :order_id)
 
         request = build_non_authorized_request('PreAuth', money, credit_card, options.merge(:authorized => money))
-        commit('PreAuth', request)
+        commit('PreAuth', request, options)
       end
 
       def capture(money, authorization, options = {})
         requires!(options, :credit_card) unless @use_tokenization
 
         request = build_authorized_request('PreAuthCapture', money, authorization, options[:credit_card], options.merge(:authorized => money))
-        commit('PreAuthCapture', request)
+        commit('PreAuthCapture', request, options)
       end
 
       def refund(money, authorization, options = {})
         requires!(options, :credit_card) unless @use_tokenization
 
         request = build_authorized_request('Return', money, authorization, options[:credit_card], options)
-        commit('Return', request)
+        commit('Return', request, options)
       end
 
       def void(authorization, options={})
         requires!(options, :credit_card) unless @use_tokenization
 
         request = build_authorized_request('VoidSale', nil, authorization, options[:credit_card], options)
-        commit('VoidSale', request)
+        commit('VoidSale', request, options)
       end
 
       def store(credit_card, options={})
         request = build_card_lookup_request(credit_card, options)
-        commit('CardLookup', request)
+        commit('CardLookup', request, options)
       end
 
       private
@@ -270,7 +270,7 @@ module ActiveMerchant #:nodoc:
 
       SUCCESS_CODES = [ 'Approved', 'Success' ]
 
-      def commit(action, request)
+      def commit(action, request, options = {})
         response = parse(action, ssl_post(endpoint_url, build_soap_request(request), build_header))
 
         success = SUCCESS_CODES.include?(response[:cmd_status])
@@ -278,7 +278,7 @@ module ActiveMerchant #:nodoc:
 
         Response.new(success, message, response,
           :test => test?,
-          :authorization => authorization_from(response),
+          :authorization => authorization_from(response, options),
           :avs_result => { :code => response[:avs_result] },
           :cvv_result => response[:cvv_result],
           :error_code => success ? nil : STANDARD_ERROR_CODE_MAPPING[response[:dsix_return_code]])
@@ -288,18 +288,18 @@ module ActiveMerchant #:nodoc:
         response[:text_response]
       end
 
-      def authorization_from(response)
+      def authorization_from(response, options = {})
         dollars, cents = (response[:purchase] || "").split(".").collect{|e| e.to_i}
         dollars ||= 0
         cents ||= 0
         [
-          response[:invoice_no],
-          response[:ref_no] || response[:invoice_no],
-          response[:auth_code],
-          response[:acq_ref_data],
-          response[:process_data],
-          response[:record_no],
-          ((dollars * 100) + cents).to_s
+          options[:invoice_no]   || response[:invoice_no],
+          options[:ref_no]       || response[:ref_no] || response[:invoice_no],
+          options[:autho_code]   || response[:auth_code],
+          options[:acq_ref_data] || response[:acq_ref_data],
+          options[:process_data] || response[:process_data],
+          options[:record_no]    || response[:record_no],
+          options[:amount]       || ((dollars * 100) + cents).to_s
         ].join(";")
       end
 
