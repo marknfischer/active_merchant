@@ -26,19 +26,19 @@ class OrbitalGatewayTest < Test::Unit::TestCase
     stub_comms do
       @gateway.purchase(50, credit_card, :order_id => '1')
     end.check_request do |endpoint, data, headers|
-      assert_match /<CurrencyExponent>2<\/CurrencyExponent>/, data
+      assert_match %r{<CurrencyExponent>2<\/CurrencyExponent>}, data
     end.respond_with(successful_purchase_response)
 
     stub_comms do
       @gateway.purchase(50, credit_card, :order_id => '1', :currency => 'CAD')
     end.check_request do |endpoint, data, headers|
-      assert_match /<CurrencyExponent>2<\/CurrencyExponent>/, data
+      assert_match %r{<CurrencyExponent>2<\/CurrencyExponent>}, data
     end.respond_with(successful_purchase_response)
 
     stub_comms do
       @gateway.purchase(50, credit_card, :order_id => '1', :currency => 'JPY')
     end.check_request do |endpoint, data, headers|
-      assert_match /<CurrencyExponent>0<\/CurrencyExponent>/, data
+      assert_match %r{<CurrencyExponent>0<\/CurrencyExponent>}, data
     end.respond_with(successful_purchase_response)
   end
 
@@ -63,8 +63,8 @@ class OrbitalGatewayTest < Test::Unit::TestCase
   def test_deprecated_void
     @gateway.expects(:ssl_post).returns(successful_void_response)
 
-    assert_deprecation_warning("Calling the void method with an amount parameter is deprecated and will be removed in a future version.", @gateway) do
-      assert response = @gateway.void(@amount, "identifier")
+    assert_deprecation_warning("Calling the void method with an amount parameter is deprecated and will be removed in a future version.") do
+      assert response = @gateway.void(50, "identifier")
       assert_instance_of Response, response
       assert_success response
       assert_nil response.message
@@ -218,7 +218,9 @@ class OrbitalGatewayTest < Test::Unit::TestCase
 
   def test_default_managed_billing
     response = stub_comms do
-      @gateway.add_customer_profile(credit_card, :managed_billing => {:start_date => "10-10-2014" })
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.add_customer_profile(credit_card, :managed_billing => {:start_date => "10-10-2014" })
+      end
     end.check_request do |endpoint, data, headers|
       assert_match(/<MBType>R/, data)
       assert_match(/<MBOrderIdGenerationMethod>IO/, data)
@@ -230,10 +232,12 @@ class OrbitalGatewayTest < Test::Unit::TestCase
 
   def test_managed_billing
     response = stub_comms do
-      @gateway.add_customer_profile(credit_card, :managed_billing => {:start_date => "10-10-2014",
-              :end_date => "10-10-2015",
-              :max_dollar_value => 1500,
-              :max_transactions => 12})
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.add_customer_profile(credit_card, :managed_billing => {:start_date => "10-10-2014",
+                :end_date => "10-10-2015",
+                :max_dollar_value => 1500,
+                :max_transactions => 12})
+      end
     end.check_request do |endpoint, data, headers|
       assert_match(/<MBType>R/, data)
       assert_match(/<MBOrderIdGenerationMethod>IO/, data)
@@ -275,6 +279,26 @@ class OrbitalGatewayTest < Test::Unit::TestCase
       assert_match(/<CustomerRefNum>ABC/, data)
       assert_match(/<CustomerProfileFromOrderInd>S/, data)
       assert_match(/<CustomerProfileOrderOverrideInd>NO/, data)
+    end.respond_with(successful_purchase_response)
+    assert_success response
+  end
+
+  def test_dont_send_customer_profile_from_order_ind_for_profile_purchase
+    @gateway.options[:customer_profiles] = true
+    response = stub_comms do
+      @gateway.purchase(50, nil, :order_id => 1, :customer_ref_num => @customer_ref_num)
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(/<CustomerProfileFromOrderInd>/, data)
+    end.respond_with(successful_purchase_response)
+    assert_success response
+  end
+
+  def test_dont_send_customer_profile_from_order_ind_for_profile_authorize
+    @gateway.options[:customer_profiles] = true
+    response = stub_comms do
+      @gateway.authorize(50, nil, :order_id => 1, :customer_ref_num => @customer_ref_num)
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(/<CustomerProfileFromOrderInd>/, data)
     end.respond_with(successful_purchase_response)
     assert_success response
   end

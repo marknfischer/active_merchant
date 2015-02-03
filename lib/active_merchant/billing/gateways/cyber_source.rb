@@ -150,6 +150,13 @@ module ActiveMerchant #:nodoc:
         commit(build_refund_request(money, identification, options), options)
       end
 
+      def verify(payment, options = {})
+        MultiResponse.run(:use_first_response) do |r|
+          r.process { authorize(100, payment, options) }
+          r.process(:ignore_result) { void(r.authorization, options) }
+        end
+      end
+
       # Adds credit to a subscription (stand alone credit).
       def credit(money, reference, options = {})
         requires!(options, :order_id)
@@ -235,7 +242,7 @@ module ActiveMerchant #:nodoc:
         xml = Builder::XmlMarkup.new :indent => 2
         add_payment_method_or_subscription(xml, money, creditcard_or_reference, options)
         add_auth_service(xml)
-        add_business_rules_data(xml)
+        add_business_rules_data(xml, options)
         xml.target!
       end
 
@@ -246,7 +253,7 @@ module ActiveMerchant #:nodoc:
         add_line_item_data(xml, options)
         add_purchase_data(xml, 0, false, options)
         add_tax_service(xml)
-        add_business_rules_data(xml)
+        add_business_rules_data(xml, options)
         xml.target!
       end
 
@@ -257,7 +264,7 @@ module ActiveMerchant #:nodoc:
         xml = Builder::XmlMarkup.new :indent => 2
         add_purchase_data(xml, money, true, options)
         add_capture_service(xml, request_id, request_token)
-        add_business_rules_data(xml)
+        add_business_rules_data(xml, options)
         xml.target!
       end
 
@@ -268,7 +275,7 @@ module ActiveMerchant #:nodoc:
           add_check_service(xml)
         else
           add_purchase_service(xml, options)
-          add_business_rules_data(xml) unless options[:pinless_debit_card]
+          add_business_rules_data(xml, options) unless options[:pinless_debit_card]
         end
         xml.target!
       end
@@ -337,7 +344,7 @@ module ActiveMerchant #:nodoc:
           end
         end
         add_subscription_create_service(xml, options)
-        add_business_rules_data(xml)
+        add_business_rules_data(xml, options)
         xml.target!
       end
 
@@ -349,7 +356,7 @@ module ActiveMerchant #:nodoc:
         add_creditcard_payment_method(xml) if creditcard
         add_subscription(xml, options, reference)
         add_subscription_update_service(xml, options)
-        add_business_rules_data(xml)
+        add_business_rules_data(xml, options)
         xml.target!
       end
 
@@ -374,11 +381,20 @@ module ActiveMerchant #:nodoc:
         xml.target!
       end
 
-      def add_business_rules_data(xml)
+      def add_business_rules_data(xml, options)
+        prioritized_options = [options, @options]
+
         xml.tag! 'businessRules' do
-          xml.tag!('ignoreAVSResult', 'true') if @options[:ignore_avs]
-          xml.tag!('ignoreCVResult', 'true') if @options[:ignore_cvv]
+          xml.tag!('ignoreAVSResult', 'true') if extract_option(prioritized_options, :ignore_avs)
+          xml.tag!('ignoreCVResult', 'true') if extract_option(prioritized_options, :ignore_cvv)
         end
+      end
+
+      def extract_option prioritized_options, option_name
+        options_matching_key = prioritized_options.detect do |options|
+          options.has_key? option_name
+        end
+        options_matching_key[option_name] if options_matching_key
       end
 
       def add_line_item_data(xml, options)
@@ -523,7 +539,7 @@ module ActiveMerchant #:nodoc:
           end
 
           xml.tag! 'status',            options[:subscription][:status]                         if options[:subscription][:status]
-          xml.tag! 'amount',            options[:subscription][:amount]                         if options[:subscription][:amount]
+          xml.tag! 'amount',            amount(options[:subscription][:amount])                 if options[:subscription][:amount]
           xml.tag! 'numberOfPayments',  options[:subscription][:occurrences]                    if options[:subscription][:occurrences]
           xml.tag! 'automaticRenew',    options[:subscription][:automatic_renew]                if options[:subscription][:automatic_renew]
           xml.tag! 'frequency',         options[:subscription][:frequency]                      if options[:subscription][:frequency]
@@ -557,6 +573,7 @@ module ActiveMerchant #:nodoc:
           add_check(xml, payment_method_or_reference)
         else
           add_address(xml, payment_method_or_reference, options[:billing_address], options)
+          add_address(xml, payment_method_or_reference, options[:shipping_address], options, true)
           add_purchase_data(xml, money, true, options)
           add_creditcard(xml, payment_method_or_reference)
         end
