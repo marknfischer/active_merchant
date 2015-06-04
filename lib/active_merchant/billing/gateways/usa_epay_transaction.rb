@@ -9,6 +9,7 @@ module ActiveMerchant #:nodoc:
       self.supported_countries  = ['US']
       self.homepage_url         = 'http://www.usaepay.com/'
       self.display_name         = 'USA ePay'
+      self.ssl_version          = :TLSv1
 
       TRANSACTIONS = {
         :authorization  => 'cc:authonly',
